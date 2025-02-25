@@ -18,63 +18,58 @@ void setup()
   Serial.begin(115200);
   dht.begin();
 
-  setupEEPROM();
+  eepromManager.setupEEPROM();
 
   esp_task_wdt_init(WDT_TIMER, true);
   esp_task_wdt_add(NULL);
 
-  readParamsEEPROM();
+  eepromManager.readParamsEEPROM();
 
-  connectWiFi();
-  setupmqtt();
+  webServer.connectWiFi();
+  mqttManager.begin();
 
   ledcSetup(ledChannel, 5000, 10);
   ledcAttachPin(PWMPIN, ledChannel);
   pinMode(coolerPin, OUTPUT);
 
   xTaskCreate(controlTask, "Control Task", 4096, NULL, 1, NULL);
-  xTaskCreate(sensorTask, "Sensor Task", 4096, NULL, 1, NULL);
-  xTaskCreate(wifiandwdt, "Sensor Task", 4096, NULL, 1, NULL);
+  xTaskCreate(wifiandwdtTask, "Wifi_And_WDT Task", 4096, NULL, 1, NULL);
 
   maxPico = PV;
 }
 
 void loop()
 {
-  client.loop();
+  mqttManager.loop();
 
   // 10 min to turn off web server
   if (serverRunning && (millis() - serverStartTime >= 600000))
   {
-    server.close();
+    webServer.close();
     serverRunning = false;
     Serial.println("Server shut down after 10 minutes.");
   }
-  if (!client.connected())
-  {
-    reconnectMQTT();
-  }
 
-  server.handleClient();
+  webServer.handleClient();
 }
 
 // Task for sensor reading and publishing to MQTT broker
 void sensorTask(void *pvParameters)
 {
   while (true)
-  {
+  {    
     PV = dht.readHumidity();
     float temperature = dht.readTemperature();
 
     if (!(isnan(PV) || isnan(PV)))
     {
-      client.publish(humidity_topic, String(int(PV)).c_str());
-      client.publish(error_topic, String(erro).c_str());
+      mqttManager.publish(mqttManager.mqttTopics["humidity"].c_str(), String(int(PV)).c_str());
+      mqttManager.publish(mqttManager.mqttTopics["error"].c_str(), String(erro).c_str());
       cv = constrain(cv, 0, 1023);
 
       int pwmValue = map(cv, 0, 1023, 0, 100);
       pwmValue = constrain(pwmValue, 0, 100); 
-      client.publish(pwm_topic, String(pwmValue).c_str());
+      mqttManager.publish(mqttManager.mqttTopics["pwm"].c_str(), String(pwmValue).c_str());
     }
 
     esp_task_wdt_reset();
@@ -95,7 +90,7 @@ void controlTask(void *pvParameters)
     if (PV > maxPico)
     {
       maxPico = PV;
-      client.publish(maxPeak_topic, String(maxPico).c_str());
+      mqttManager.publish(mqttManager.mqttTopics["maxPeak"].c_str(), String(maxPico).c_str());
     }
     if (!isSettled && abs(PV - SP) > 2.0)
     {
@@ -110,12 +105,12 @@ void controlTask(void *pvParameters)
       lastHeatState = coolerOn;
       if (coolerOn)
       {
-        client.publish("esp32/cooler", "on");
+        mqttManager.publish("esp32/cooler", "on");
         digitalWrite(coolerPin, HIGH);
       }
       else
       {
-        client.publish("esp32/cooler", "off");
+        mqttManager.publish("esp32/cooler", "off");
         digitalWrite(coolerPin, LOW);
       }
     }
@@ -124,7 +119,7 @@ void controlTask(void *pvParameters)
     if (!isSettled && abs(PV - SP) <= 2.0)
     { // 2% of setpoint
       settlingTime = (millis() - startTime) / 1000.0;
-      client.publish(settlingTime_topic, String(settlingTime).c_str());
+      mqttManager.publish(mqttManager.mqttTopics["settlingTime"].c_str(), String(settlingTime).c_str());
       isSettled = true; // The system is stabilized
     }
 
@@ -132,7 +127,7 @@ void controlTask(void *pvParameters)
     if (overshoot < 0)
       overshoot = 0.0;
 
-    client.publish(overshoot_topic, String(overshoot).c_str());
+    mqttManager.publish(mqttManager.mqttTopics["overshoot"].c_str(), String(overshoot).c_str());
 
     // PID tuning using Ziegler-Nichols
     if (isSettled)
@@ -140,9 +135,9 @@ void controlTask(void *pvParameters)
       Kp = 0.6 * maxPico;
       Ki = (2 * Kp) / max(settlingTime / 1000.0, 1.0);
       Kd = (Kp * max(settlingTime / 1000.0, 1.0)) / 8.0;
-      client.publish(kp_topic, String(Kp).c_str());
-      client.publish(ki_topic, String(Ki).c_str());
-      client.publish(kd_topic, String(Kd).c_str());
+      mqttManager.publish(mqttManager.mqttTopics["kp"].c_str(), String(Kp).c_str());
+      mqttManager.publish(mqttManager.mqttTopics["ki"].c_str(), String(Ki).c_str());
+      mqttManager.publish(mqttManager.mqttTopics["kd"].c_str(), String(Kd).c_str());
     }
 
     if (!coolerOn)
@@ -158,16 +153,22 @@ void controlTask(void *pvParameters)
     erro2 = erro1;
     erro1 = erro;
 
-    checkThresholdViolation(); // alert user
+    notification.checkThresholdViolation(); // alert user
 
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
 
-void wifiandwdt(void *pvParameters)
+// Task for Wi-Fi reconnection and WDT reset
+void wifiandwdtTask(void *pvParameters)
 {
   while (true)
   {
+    if (!mqttManager.connected())
+    {
+      mqttManager.reconnect();
+    }
+
     esp_task_wdt_reset();
 
     reconnectWiFi++;
@@ -175,7 +176,7 @@ void wifiandwdt(void *pvParameters)
     {
       if (WiFi.status() != WL_CONNECTED)
       {
-        connectWiFi();
+        webServer.connectWiFi();
       }
       reconnectWiFi = 0;
     }

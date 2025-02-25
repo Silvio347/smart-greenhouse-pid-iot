@@ -7,29 +7,20 @@
 #include <notification.h>
 #include <PubSubClient.h>
 
-//***************************************************************************************************
-// Function  : Begin na EEPROM
-// Arguments : none
-// Return    : none
-//***************************************************************************************************
-void setupEEPROM();
+class EEPROMManager
+{
+public:
+    EEPROMManager(); // Constructor
 
-//***************************************************************************************************
-// Function  : Salva os parâmetros de WI-FI e IP da API
-// Arguments : none
-// Return    : none
-//***************************************************************************************************
-void saveParamsEEPROM();
+    void setupEEPROM();                                                   // Setup EEPROM
+    void saveParamsEEPROM();                                              // Save parameters in EEPROM
+    void readParamsEEPROM();                                              // Read parameters from EEPROM
+    void saveFloatEEPROM(int enderecoInicio, float valor);                // Save float in EEPROM
+    float readFloatEEPROM(int enderecoInicio);                            // Read float from EEPROM
+    void saveStringEEPROM(int enderecoInicio, String str, int maxLength); // Save string in EEPROM
+    String readStringEEPROM(int enderecoInicio, int maxLength);           // Read string from EEPROM
+};
 
-//***************************************************************************************************
-// Function  : Obtém o SSID, PASSWORD e IP da API salvos na EEPROM
-// Arguments : none
-// Return    : none
-//***************************************************************************************************
-void readParamsEEPROM();
-
-void saveFloatEEPROM(int enderecoInicio, float valor);
-float readFloatEEPROM(int enderecoInicio);
-void saveStringEEPROM(int enderecoInicio, String str, int maxLength);
+extern EEPROMManager eepromManager; // global instance of EEPROMManager
 
 #endif

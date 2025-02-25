@@ -1,78 +1,35 @@
-#include <notification.h>
+#include "notification.h"
 #include <EEPROM.h>
 #include <myEEPROM.h>
 
-// Credenciais do Twilio
-const char *accountSid = "Your_SSID";
-const char *authToken = "Your_Auth_Token";
-const char *fromNumber = "+Your_Twilio_Number";
-String toNumber = "+Your_Number";
+Notification notification; // Global instance of Notification
 
-// Call to phone when the umidity is higher than the threshold
-void makeCall()
+// Twilio credentials API
+const char *accountSid = "Your_SSID";           // Twilio account SID
+const char *authToken = "Your_Auth_Token";      // Twilio auth token
+const char *fromNumber = "+Your_Twilio_Number"; // Twilio number
+String toNumber = "+Your_Number";               // User number
+
+Notification::Notification() {} // Constructor
+
+// Send request to Twilio API
+void Notification::sendTwilioRequest(const String &url, const String &data)
 {
   if (WiFi.status() == WL_CONNECTED)
   {
     HTTPClient http;
-
-    String url = "https://api.twilio.com/2010-04-01/Accounts/" +
-                 String(accountSid) + "/Calls.json";
-
-    String dados = "To=" + String(toNumber) +
-                   "&From=" + String(fromNumber) +
-                   "&Url=http://demo.twilio.com/docs/voice.xml";
-
-    http.begin(url);
-    http.setAuthorization(accountSid, authToken); // Autenticação HTTP
-    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-
-    int codigoResposta = http.POST(dados);
-
-    if (codigoResposta == 201)
-    {
-      Serial.println("Call made successfully!");
-    }
-    else
-    {
-      Serial.print("Fail to make call: ");
-      Serial.println(http.getString());
-    }
-
-    http.end();
-  }
-  else
-  {
-    Serial.println("Error: No WiFi.");
-  }
-}
-
-// Send SMS when the humidity is higher than the threshold
-void sendSMS()
-{
-  if (WiFi.status() == WL_CONNECTED)
-  {
-    HTTPClient http;
-
-    String url = "https://api.twilio.com/2010-04-01/Accounts/" +
-                 String(accountSid) + "/Messages.json";
-
-    String dados = "To=" + String(toNumber) +
-                   "&From=" + String(fromNumber) +
-                   "&Body=Alerta! Umidade acima do limite!";
-
     http.begin(url);
     http.setAuthorization(accountSid, authToken);
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
-    int codigoResposta = http.POST(dados);
-
-    if (codigoResposta == 201)
+    int responseCode = http.POST(data);
+    if (responseCode == 201)
     {
-      Serial.println("SMS sent successfully!");
+      Serial.println("Request sent successfully!");
     }
     else
     {
-      Serial.print("Fail to send SMS: ");
+      Serial.print("Failed to send request: ");
       Serial.println(http.getString());
     }
 
@@ -84,12 +41,36 @@ void sendSMS()
   }
 }
 
-void pushNotification()
+// Make a call to alert when the humidity is above the limit
+void Notification::makeCall()
 {
-  client.publish("esp32/alert", "Alert! Turning off the load because the system not settling.");
+  String url = "https://api.twilio.com/2010-04-01/Accounts/" + String(accountSid) + "/Calls.json";
+  String data = "To=" + String(toNumber) +
+                "&From=" + String(fromNumber) +
+                "&Url=http://demo.twilio.com/docs/voice.xml";
+
+  sendTwilioRequest(url, data);
 }
 
-void handleAlert()
+// Send SMS when the humidity is above the limit
+void Notification::sendSMS()
+{
+  String url = "https://api.twilio.com/2010-04-01/Accounts/" + String(accountSid) + "/Messages.json";
+  String data = "To=" + String(toNumber) +
+                "&From=" + String(fromNumber) +
+                "&Body=Alerta! Umidade acima do limite!";
+
+  sendTwilioRequest(url, data);
+}
+
+// Send push notification when the system is not settling
+void Notification::pushNotification()
+{
+  mqttManager.publish("esp32/alert", "Alert! Turning off the load because the system is not settling.");
+}
+
+// Manage alert based on the option chosen
+void Notification::handleAlert()
 {
   thresholdCounter++;
   if (thresholdCounter < MAX_SECONDS_TO_ALERT)
@@ -107,10 +88,12 @@ void handleAlert()
   {
     pushNotification();
   }
+
   thresholdCounter = 0;
 }
 
-void checkThresholdViolation()
+// Check threshold violation based on the option chosen
+void Notification::checkThresholdViolation()
 {
   if (thresholdOption == "Var")
   {

@@ -1,5 +1,5 @@
-#ifndef mywebserver_H
-#define mywebserver_H
+#ifndef MY_WEB_SERVER_H
+#define MY_WEB_SERVER_H
 
 #include <EEPROM.h>
 #include <myEEPROM.h>
@@ -13,14 +13,26 @@
 #include <FS.h>
 #include <Update.h>
 
-extern WebServer server;
+class MyWebServer
+{
+public:
+    MyWebServer();               // Constructor
+    void begin();                // Start the server
+    void connectWiFi();          // Connect to WiFi
+    void handleRoot();           // Root page
+    void handleWiFiForm();       // WiFi configuration page
+    void handleMQTTForm();       // MQTT configuration page
+    void handleFirmwareUpload(); // Firmware upload page
+    void handleUploadFirmware(); // Firmware upload handler
+    void handleClient();         // Handle client requests
+    void close();                // Close the server
+private:
+    void createAP();                    // Create an access point
+    void setupRoutes();                 // Setup routes
+    void myDelayMillis(uint16_t tempo); // Delay in milliseconds
+    WebServer server;                   // Web server
+};
 
-void handleWiFiForm();
-void handleRoot();
-void handleMQTTForm();
-void setup_web_server();
-void connectWiFi();
-void handleFirmwareUpload();
-void handleUploadFirmware();
+extern MyWebServer webServer; // Web server global object 
 
 #endif
